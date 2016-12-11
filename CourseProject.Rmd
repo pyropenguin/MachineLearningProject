@@ -1,0 +1,111 @@
+---
+title: "Machine Learning Course Project"
+author: "Jonathan Kunze"
+date: "12/3/2016"
+output: html_document
+---
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+## Data Cleaning
+
+We will first obtain and format the data to get it into a usable structure.
+
+```{r, warning=FALSE, message=FALSE}
+library(data.table)
+library(ggplot2)
+library(caret)
+library(scales)
+library(rpart)
+library(randomForest)
+setwd('~/Dropbox/Data Science Specialization/Machine Learning/Course Project/')
+training <- fread('pml-training.csv')
+testing  <- fread('pml-testing.csv')
+training$V1 <- NULL # Remove row numbers since R already has them
+testing$V1 <- NULL  # Remove row numbers since R already has them
+training$classe <- as.factor(training$classe)
+#training$timestamp <- training$raw_timestamp_part_1 + training$raw_timestamp_part_2
+```
+
+Let's remove some variables that don't make sense for prediction. These include near-zero variance variables, summary variables (that are mostly NA in the dataset), and variables that are obviously unrelated (user name, timestamps, etc.)
+
+```{r, warning=FALSE, message=FALSE}
+# Remove identity variables (user_name and timestamps)
+training <- training[,-(1:4)]
+
+# Remove summary variables (containing NA)
+training <- as.data.frame(training) # Convert to data.frame to do this
+training <- training[, colSums(is.na(training)) == 0]
+
+# Remove near-zero variables
+NZV <- nearZeroVar(training)
+training <- training[, -NZV]
+
+training <- as.data.table(training) # Convert back to data.table for speed
+```
+
+Next, let's split the training data further so that we can compute out-of-sample error with cross validation. Approximately 60% of the training dataset will be split into a new dataset called 'train', the other 40% will be put into a new dataset called 'test'.
+
+```{r, warning=FALSE, message=FALSE}
+set.seed(12345)
+inTrain <- createDataPartition(y=training$classe, p=0.6, list=FALSE)
+train <- training[inTrain, ]
+test  <- training[-inTrain, ]
+```
+
+## Prediction
+
+#### Method 1: rpart
+
+The first method we'll try is a classification tree, implemented using the rpart function.
+
+```{r, warning=FALSE, message=FALSE}
+# Train the rpart model using the train dataset
+modFit_rpart <- train(classe ~ ., data=train, method="rpart")
+print(modFit_rpart)
+
+# Predict using the rpart model on the test dataset
+predict_rpart <- predict(modFit_rpart, test)
+cm_rpart <- confusionMatrix(test$classe, predict_rpart)
+print(cm_rpart)
+```
+
+Using the test dataset we split off for cross-validation, the accuracy of the rpart method comes out to `r percent(cm_rpart$overall[1])`. This means that we have a lot of out-of-sample error, so we will try a different method.
+
+#### Method 2: randomForest
+
+The second method we'll try is a random forest, implemented using the rf function.
+
+```{r, warning=FALSE, message=FALSE}
+# Train the rf model using the train dataset
+modFit_rf <- randomForest(classe ~ ., data=train, method="rf")
+print(modFit_rf)
+
+# Predict using the rpart model on the test dataset
+predict_rf <- predict(modFit_rf, test)
+cm_rf <- confusionMatrix(test$classe, predict_rf)
+print(cm_rf)
+```
+
+Using the test dataset we split off for cross-validation, the accuracy of the rf method comes out to `r percent(cm_rf$overall[1])`. This is indicative of a very low degree of out-of-sample error, so we will choose this model.
+
+## Prediction
+
+The last step is to re-build the random forest model using the full training dataset, then use that model to predict the classe variable for the testing set.
+
+```{r, warning=FALSE, message=FALSE}
+# Train the rf model using the train dataset
+modFit_final <- randomForest(classe ~ ., data=training, method="rf")
+print(modFit_final)
+
+# Predict using the rpart model on the test dataset
+predict_final <- predict(modFit_final, testing)
+```
+
+The final predictions come out to: 
+```{r, warning=FALSE, message=FALSE}
+print(predict_final)
+```
